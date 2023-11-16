@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+data:
+  service.webhook.dingtalk: |
+    url: https://oapi.dingtalk.com/robot/send?access_token=******** # 钉钉Token
+    headers:
+      - name: Content-Type
+        value: application/json
+  context: |
+    argocdUrl: https://argocd.xxx.com ## Argocd地址
+  template.app-sync-change: |
+    webhook:
+      dingtalk:
+        method: POST
+        body: |
+          {
+                "msgtype": "markdown",
+                "markdown": {
+                    "title":"ArgoCD同步状态",
+                    "text": "### ArgoCD同步状态\n> - app名称: {{.app.metadata.name}}\n> - app同步状态: {{ .app.status.operationState.phase}}\n> - 时间:{{.app.status.operationState.startedAt}}\n> - URL: [点击跳转ArgoCD]({{.context.argocdUrl}}/applications/{{.app.metadata.name}}?operation=true) \n"
+                }
+            }
+  trigger.on-deployed: |
+    - description: Application is synced and healthy. Triggered once per commit.
+      oncePer: app.status.sync.revision
+      send: [app-sync-change]  # template names
+      # trigger condition
+      when: app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+  trigger.on-health-degraded: |
+    - description: Application has degraded
+      send: [app-sync-change]
+      when: app.status.health.status == 'Degraded'
+  trigger.on-sync-failed: |
+    - description: Application syncing has failed
+      send: [app-sync-change]  # template names
+      when: app.status.operationState.phase in ['Error', 'Failed']
+  trigger.on-sync-running: |
+    - description: Application is being synced
+      send: [app-sync-change]  # template names
+      when: app.status.operationState.phase in ['Running']
+  trigger.on-sync-status-unknown: |
+    - description: Application status is 'Unknown'
+      send: [app-sync-change]  # template names
+      when: app.status.sync.status == 'Unknown'
+  trigger.on-sync-succeeded: |
+    - description: Application syncing has succeeded
+      send: [app-sync-change]  # template names
+      when: app.status.operationState.phase in ['Succeeded']
+  subscriptions: |
+    - recipients: [dingtalk]  # 可能有bug，正常应该是webhook:dingtalk
+      triggers: [on-sync-running, on-deployed, on-sync-failed, on-sync-succeeded]
